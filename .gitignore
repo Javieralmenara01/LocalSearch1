@@ -1,4 +1,6 @@
 .vscode
 /vcpkg
 .DS_Store
-º
+/bestSolutions
+/vcpkg
+/results
