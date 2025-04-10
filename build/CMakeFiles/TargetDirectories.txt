@@ -1,3 +1,0 @@
-/Users/javieralmenaraherrera/Desktop/MetaHeuristica/build/CMakeFiles/main.dir
-/Users/javieralmenaraherrera/Desktop/MetaHeuristica/build/CMakeFiles/edit_cache.dir
-/Users/javieralmenaraherrera/Desktop/MetaHeuristica/build/CMakeFiles/rebuild_cache.dir

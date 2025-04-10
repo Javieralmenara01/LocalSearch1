@@ -1,1 +1,0 @@
-/Library/Developer/CommandLineTools/usr/bin/c++ -O3 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/main.dir/main.cc.o CMakeFiles/main.dir/src/Functions.cc.o CMakeFiles/main.dir/src/ProblemInstance.cc.o CMakeFiles/main.dir/src/MetaHeuristicSolver.cc.o CMakeFiles/main.dir/src/Solver.cc.o -o main
