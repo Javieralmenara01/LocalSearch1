@@ -1060,11 +1060,7 @@ int Solver::calculateHardConstraintViolations() {
                              [&patient](const PatientAssignment &pa) {
                                return pa.id == patient.id;
                              });
-      if (it != solution.patients.end()) {
-        if (!it->admission_day.has_value()) {
-          violations++;
-        }
-      } else {
+      if (!it->admission_day.has_value()) {
         violations++;
       }
     }
@@ -1193,9 +1189,52 @@ static bool isBetterFitness(const std::pair<int, int>& candidate, const std::pai
   return false;
 }
 
+// std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
+//   // Restaurar estado inicial de los cirujanos para garantizar determinismo
+//   problem.surgeons = originalProblem.surgeons;
+  
+//   // Evaluar la solución inicial
+//   auto bestFitness = solve(encodedSolution);
+//   EncodedSolution bestSolution = encodedSolution; 
+
+//   // Iterar entre todos los días para cada paciente
+//   for (int i = 0; i <  encodedSolution.encoded_patients.size(); ++i) {
+//     // Buscar al paciente en los datos del problema
+//     auto patientIt = std::find_if(problem.patients.begin(), problem.patients.end(),
+//                                   [&encodedSolution, i](const Patient &patient)
+//                                   {
+//                                     return patient.id == encodedSolution.encoded_patients[i].patient_id;
+//                                   });
+//     if (patientIt == problem.patients.end()) {
+//       throw std::runtime_error("Paciente no encontrado en los datos del problema.");
+//     }
+//     const auto &patient = *patientIt;
+//     int last_day = 0;
+//     if (patient.mandatory) {
+//       last_day = patient.surgery_due_day;
+//     } else {
+//       last_day = problem.days - 1;
+//     }
+//     for (int day = 0; day <= last_day; ++day) {
+//       // Iterar sobre los días, para cambiar el día de admisión de los pacientes en la codificación
+//       EncodedSolution newEncodedSolution = bestSolution;
+//       newEncodedSolution.encoded_patients[i].admission_day = day;
+
+//       // Evaluar la nueva solución
+//       auto newFitness = solve(newEncodedSolution);
+//       // Si la nueva solución es mejor, actualizar la mejor solución
+//       if (isBetterFitness(newFitness, bestFitness)) {
+//         bestFitness = newFitness;
+//         bestSolution = newEncodedSolution;
+//       }
+//     }      
+//   }
+//   encodedSolution = bestSolution;
+//   return bestFitness;
+// }
+
+
 std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
-  // Restaurar estado inicial de los cirujanos para garantizar determinismo
-  problem.surgeons = originalProblem.surgeons;
   
   // Evaluar la solución inicial
   auto bestFitness = solve(encodedSolution);
@@ -1213,16 +1252,24 @@ std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
       throw std::runtime_error("Paciente no encontrado en los datos del problema.");
     }
     const auto &patient = *patientIt;
-    int last_day = 0;
-    if (patient.mandatory) {
-      last_day = patient.surgery_due_day;
-    } else {
-      last_day = problem.days - 1;
+
+    // Eliminar las habitaciones incompatibles para el paciente del vector total de habitaciones
+    std::vector<std::string> availableRooms;
+    for (const auto &room : problem.rooms) {
+      if (std::find(patient.incompatible_room_ids.begin(), patient.incompatible_room_ids.end(), room.id) == patient.incompatible_room_ids.end()) {
+        availableRooms.push_back(room.id);
+      }
     }
-    for (int day = 0; day <= last_day; ++day) {
+    // Si no hay habitaciones disponibles, continuar con el siguiente paciente
+    if (availableRooms.empty()) {
+      continue;
+    }
+    // Iterar sobre las habitaciones disponibles
+    for (const auto &room : availableRooms) {
       // Iterar sobre los días, para cambiar el día de admisión de los pacientes en la codificación
       EncodedSolution newEncodedSolution = bestSolution;
-      newEncodedSolution.encoded_patients[i].admission_day = day;
+      newEncodedSolution.encoded_patients[i].admission_day = patient.surgery_release_day;
+      newEncodedSolution.encoded_patients[i].room_id = room;
 
       // Evaluar la nueva solución
       auto newFitness = solve(newEncodedSolution);
@@ -1231,10 +1278,9 @@ std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
         bestFitness = newFitness;
         bestSolution = newEncodedSolution;
       }
-    }      
+    }
   }
+
   encodedSolution = bestSolution;
   return bestFitness;
 }
-
-

@@ -128,6 +128,7 @@ std::vector<EncodedSolution> MetaHeuristicSolver::generateInitialPopulation(int 
   return population;
 }
 
+
 /**
  * Algoritmo genético para resolver el problema de asignación hospitalaria.
  * 
@@ -138,7 +139,7 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
   // Parámetros del algoritmo
   const int tournamentSize = 3;                         // Tamaño del torneo para la selección
   const double crossoverRate = 0.3;                       // Parámetro de cruce
-  const auto maxDuration = std::chrono::minutes(5);      // Tiempo máximo de ejecución
+  const auto maxDuration = std::chrono::minutes(60);      // Tiempo máximo de ejecución
   const int eliteCount = 10;                              // Número de soluciones elite a retener
 
   // Tiempo de inicio
@@ -170,7 +171,8 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
             (hardViolations == globalBestFitness.first && softPenalty < globalBestFitness.second)) {
           globalBestFitness = { hardViolations, softPenalty };
           globalBestSolution = population[j];
-          solver.exportSolution("bestSolution.json");
+          // Se elimina la exportación inmediata para evitar inconsistencias:
+          // solver.exportSolution("bestSolution.json");
         }
       });
     }
@@ -179,16 +181,19 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
     }
   }
 
+  std::uniform_real_distribution<double> probDist(0.0, 1.0);
+  int generation = 0;
+
   // Lambda para selección por torneo
   auto tournamentSelection = [&](const std::vector<EncodedSolution>& pop,
-                                 const std::vector<std::pair<int,int>>& fit) -> int {
+      const std::vector<std::pair<int,int>>& fit) -> int {
     int bestIndex = -1;
     std::pair<int,int> bestFitness = { std::numeric_limits<int>::max(), std::numeric_limits<int>::max() };
     std::uniform_int_distribution<int> dist(0, pop.size() - 1);
     for (int i = 0; i < tournamentSize; ++i) {
       int idx = dist(rng);
       if (fit[idx].first < bestFitness.first ||
-          (fit[idx].first == bestFitness.first && fit[idx].second < bestFitness.second)) {
+      (fit[idx].first == bestFitness.first && fit[idx].second < bestFitness.second)) {
         bestFitness = fit[idx];
         bestIndex = idx;
       }
@@ -196,8 +201,6 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
     return bestIndex;
   };
 
-  std::uniform_real_distribution<double> probDist(0.0, 1.0);
-  int generation = 0;
 
   // Bucle principal del algoritmo genético (máximo 10 minutos)
   while (std::chrono::steady_clock::now() - startTime < maxDuration) {
@@ -267,7 +270,8 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
               (hardViolations == globalBestFitness.first && softPenalty < globalBestFitness.second)) {
             globalBestFitness = { hardViolations, softPenalty };
             globalBestSolution = population[j];
-            solver.exportSolution("bestSolution.json");          
+            // Se elimina la exportación inmediata:
+            // solver.exportSolution("bestSolution.json");          
           }
         });
       }
@@ -286,6 +290,17 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
 
   std::cout << "Solución final: Hard violations = " << globalBestFitness.first
             << ", Soft penalty = " << globalBestFitness.second << std::endl;
+  
+  // Exportar la solución final de forma segura
+  {
+    std::lock_guard<std::mutex> lock(bestMutex);
+    // Se crea un solver final para exportar la solución global obtenida.
+    // Se asume que Solver tiene un método setSolution que establece la solución interna.
+    Solver finalSolver(problem);
+    finalSolver.solve(globalBestSolution);  
+    finalSolver.exportSolution("bestSolution.json");
+  }
+
   return { globalBestSolution.encoded_patients, globalBestFitness.second };
 }
 
