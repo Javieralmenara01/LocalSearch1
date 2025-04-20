@@ -289,39 +289,178 @@ void Solver::assignRoom(const Patient &patient, int day, const std::string &room
 }
 
 /**
+ * Intenta reparar la asignación de un paciente obligatorio modificando el día de admisión y la habitación asignada.
+ *
+ * @param patient El paciente obligatorio a reparar.
+ * @param enc Referencia a la solución codificada correspondiente al paciente, cuyos parámetros se modificarán.
+ * @return true si se encontró una asignación factible; false en caso contrario.
+ */
+bool Solver::repairMandatoryPatient(const Patient &patient, EncodedPatientSolution &enc) {
+  // Recorremos todos los días válidos (desde surgery_release_day hasta surgery_due_day)
+  for (int newDay = patient.surgery_release_day; newDay <= patient.surgery_due_day && newDay < problem.days; ++newDay) {
+    // Recorremos todas las habitaciones disponibles en la instancia
+    for (const auto &room : problem.rooms) {
+      // Saltamos las habitaciones incompatibles para el paciente.
+      if (std::find(patient.incompatible_room_ids.begin(), patient.incompatible_room_ids.end(), room.id) != patient.incompatible_room_ids.end()) {
+        continue;
+      }
+      
+      // Guardamos los valores actuales para poder revertir en caso de no lograr la reparación.
+      int oldDay = enc.admission_day;
+      std::string oldRoom = enc.room_id;
+      
+      // Asignamos los valores candidatos.
+      enc.admission_day = newDay;
+      enc.room_id = room.id;
+      
+      // Verificamos que se cumplan las restricciones de cirujano, quirófano y habitación.
+      if ((checkSurgeonAvailability(patient, newDay) &&
+          checkOperatingTheaterAvailability(patient, newDay)) &&
+          checkRoomAvailability(patient, newDay, room.id) ) {
+        return true;
+      } else {
+        // Si no cumple, revertimos y seguimos probando.
+        enc.admission_day = oldDay;
+        enc.room_id = oldRoom;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Intenta reparar la asignación de un paciente opcional modificando el día de admisión y la habitación asignada.
+ * Se realizan varios intentos antes de abandonar.
+ *
+ * @param patient El paciente opcional a reparar.
+ * @param enc Referencia a la solución codificada correspondiente al paciente, cuyos parámetros se modificarán.
+ * @return true si se encontró una asignación factible; false en caso contrario.
+ */
+bool Solver::repairOptionalPatient(const Patient &patient, EncodedPatientSolution &enc) {
+  const int MAX_ATTEMPTS = 5;
+  int attempt = 0;
+  
+  while (attempt < MAX_ATTEMPTS) {
+    // Recorremos todos los días válidos desde la fecha de liberación hasta el último día disponible
+    for (int newDay = patient.surgery_release_day; newDay < problem.days; ++newDay) {
+      for (const auto &room : problem.rooms) {
+        // Saltamos las habitaciones incompatibles.
+        if (std::find(patient.incompatible_room_ids.begin(), patient.incompatible_room_ids.end(), room.id) != patient.incompatible_room_ids.end()) {
+          continue;
+        }
+        
+        int oldDay = enc.admission_day;
+        std::string oldRoom = enc.room_id;
+        
+        enc.admission_day = newDay;
+        enc.room_id = room.id;
+        
+        if ((checkSurgeonAvailability(patient, newDay) &&
+            checkOperatingTheaterAvailability(patient, newDay)) &&
+            checkRoomAvailability(patient, newDay, room.id)) {
+          return true;
+        } else {
+          enc.admission_day = oldDay;
+          enc.room_id = oldRoom;
+        }
+      }
+    }
+    attempt++;
+  }
+  return false;
+}
+
+/**
  * Resuelve el problema de asignación hospitalaria a partir de una solución codificada.
  * @param encodedSolution Solución codificada inicial.
  */
 std::pair<int,int> Solver::solve(EncodedSolution& encodedSolution) {
   // Reinicializa los estados dinámicos de la solución (habitaciones, quirófanos y enfermeras)
   initializeDynamicStates();
-   
+    
+  // Separar los pacientes obligatorios y opcionales
+  std::vector<EncodedPatientSolution> mandatoryEnc;
+  std::vector<EncodedPatientSolution> optionalEnc;
+  for (const auto &enc : encodedSolution.encoded_patients) {
+    auto patientIt = std::find_if(problem.patients.begin(), problem.patients.end(),
+                                  [&enc](const Patient &p) { return p.id == enc.patient_id; });
+    if (patientIt == problem.patients.end()) {
+      throw std::runtime_error("Paciente codificado " + enc.patient_id + " no encontrado.");
+    }
+    if (patientIt->mandatory) {
+      mandatoryEnc.push_back(enc);
+    } else {
+      optionalEnc.push_back(enc);
+    }
+  }
+  
   // --- Procesar pacientes obligatorios ---
-  for (auto &enc : encodedSolution.encoded_patients) {
+  for (auto &enc : mandatoryEnc) {
     
     auto patientIt = std::find_if(problem.patients.begin(), problem.patients.end(),
                                   [&enc](const Patient &p) { return p.id == enc.patient_id; });
     if (patientIt == problem.patients.end()) {
       throw std::runtime_error("Paciente codificado " + enc.patient_id + " no encontrado.");
     }
+
     Patient patient = *patientIt;
     int admissionDay = enc.admission_day;
-    
+      
     // Verificar disponibilidad
     if (!checkSurgeonAvailability(patient, admissionDay) ||
         !checkOperatingTheaterAvailability(patient, admissionDay) ||
         !checkRoomAvailability(patient, admissionDay, enc.room_id)) {
-      solution.patients.push_back({ patient.id });
-      continue;
+        
+      // Intentar reparar para el paciente obligatorio.
+      if (!repairMandatoryPatient(patient, enc)) {
+        solution.patients.push_back({ patient.id });
+        continue;
+      }
+
+      // Actualizar el día de admisión tras la reparación.
+      admissionDay = enc.admission_day;
     }
-    
+      
     // Realizar asignaciones (cirujano, quirófano y habitación)
     assignSurgeon(patient, admissionDay);
     std::string theater_id = assignOperatingTheater(patient, admissionDay);
     assignRoom(patient, admissionDay, enc.room_id);
     solution.patients.push_back({ patient.id, admissionDay, enc.room_id, theater_id });
   }
-  
+    
+  // --- Procesar pacientes opcionales ---
+  for (auto &enc : optionalEnc) {
+    
+    auto patientIt = std::find_if(problem.patients.begin(), problem.patients.end(),
+                                  [&enc](const Patient &p) { return p.id == enc.patient_id; });
+    if (patientIt == problem.patients.end()) {
+      throw std::runtime_error("Paciente codificado " + enc.patient_id + " no encontrado.");
+    }
+    
+    Patient patient = *patientIt;
+    int admissionDay = enc.admission_day;
+      
+    // Verificar disponibilidad
+    if (!checkSurgeonAvailability(patient, admissionDay) ||
+        !checkOperatingTheaterAvailability(patient, admissionDay) ||
+        !checkRoomAvailability(patient, admissionDay, enc.room_id)) {
+      
+      // Intentar reparar para el paciente opcional.
+      if (!repairOptionalPatient(patient, enc)) {
+        solution.patients.push_back({ patient.id });
+        continue;  // Omitir el paciente opcional si no se puede reparar.
+      }
+
+      admissionDay = enc.admission_day;
+    }
+      
+    // Realizar asignaciones para el paciente opcional reparado.
+    assignSurgeon(patient, admissionDay);
+    std::string theater_id = assignOperatingTheater(patient, admissionDay);
+    assignRoom(patient, admissionDay, enc.room_id);
+    solution.patients.push_back({ patient.id, admissionDay, enc.room_id, theater_id });
+  }
+
   /// Indice para acceder a los turnos
   std::unordered_map<std::string, int> shiftIndex;
   for (int i = 0; i < problem.shift_types.size(); ++i) {
@@ -1189,6 +1328,85 @@ static bool isBetterFitness(const std::pair<int, int>& candidate, const std::pai
   return false;
 }
 
+void Solver::applyNurses(const EncodedSolution& enc) {
+  // Sustituir solo la parte de enfermeras en el estado dinámico
+  solution.nurses.clear();
+  int idx = 0;
+  for (const auto &nurse : problem.nurses) {
+    NurseAssignment na;
+    na.id = nurse.id;
+    for (const auto &ws : nurse.working_shifts) {
+      NurseAssignment::ShiftAssignment sa;
+      sa.day    = ws.day;
+      sa.shift  = ws.shift;
+      sa.rooms  = enc.encoded_nurses[idx++];
+      na.assignments.push_back(std::move(sa));
+    }
+    solution.nurses.push_back(std::move(na));
+  }
+}
+
+std::pair<int,int> Solver::computeNurseOnlyCosts() {
+  // Solo afectan S2, S3 y S4
+  int s2 = calculateMinimumSkillPenalty();
+  int s3 = calculateContinuityOfCarePenalty();
+  int s4 = calculateMaximumWorkloadPenalty();
+  
+  // Actualizar vector de costes suaves
+  // Asumimos que solution.soft_constraints ya contiene 8 entradas en orden S1..S8
+  solution.soft_constraints[1] = s2;
+  solution.soft_constraints[2] = s3;
+  solution.soft_constraints[3] = s4;
+
+  // Recalcular total
+  solution.total_soft_constraints = std::accumulate(
+    solution.soft_constraints.begin(),
+    solution.soft_constraints.end(),
+    0);
+
+  // No introducimos violaciones duras al mover enfermeras
+  return {calculateHardConstraintViolations(), solution.total_soft_constraints};
+}
+
+std::pair<int,int> Solver::localSearchNurses(EncodedSolution& enc) {
+  // 1) Resolver inicialmente la solución completa para fijar pacientes y quirófanos
+  auto [hard0, soft0] = solve(enc);
+
+
+  // Mapear cada bloque a su (día, turno)
+  int totalBlocks = enc.encoded_nurses.size();
+  std::vector<std::pair<int,std::string>> blockMeta(totalBlocks);
+  // Construir metadatos: bloque -> (day, shift)
+  int idx = 0;
+  for (const auto &nurse : problem.nurses) {
+    for (const auto &ws : nurse.working_shifts) {
+      blockMeta[idx++] = { ws.day, ws.shift };
+    }
+  }
+
+  // 4) Para cada bloque A buscar bloque B con mismo día y turno
+  for (int i = 0; i < totalBlocks; ++i) {
+    auto [dayA, shiftA] = blockMeta[i];
+    for (int j = i + 1; j < totalBlocks; ++j) {
+      auto [dayB, shiftB] = blockMeta[j];
+      if (dayA != dayB || shiftA != shiftB) continue;
+      // Intercambio provisional
+      std::swap(enc.encoded_nurses[i], enc.encoded_nurses[j]);
+      // Reaplicar enfermeras y evaluar
+      applyNurses(enc);
+      auto [hardNew, softNew] = computeNurseOnlyCosts();
+      if (hardNew < hard0 || (hardNew == hard0 && softNew < soft0)) {
+        return { hardNew, softNew };
+      }
+      // Revertir
+      std::swap(enc.encoded_nurses[i], enc.encoded_nurses[j]);
+    }
+  }
+
+  // 5) Sin mejora, devolver original
+  return { hard0, soft0 };
+}
+
 // std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
 //   // Restaurar estado inicial de los cirujanos para garantizar determinismo
 //   problem.surgeons = originalProblem.surgeons;
@@ -1233,54 +1451,53 @@ static bool isBetterFitness(const std::pair<int, int>& candidate, const std::pai
 //   return bestFitness;
 // }
 
-
-std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
+// std::pair<int, int> Solver::localSearch(EncodedSolution& encodedSolution) {
   
-  // Evaluar la solución inicial
-  auto bestFitness = solve(encodedSolution);
-  EncodedSolution bestSolution = encodedSolution; 
+//   // Evaluar la solución inicial
+//   auto bestFitness = solve(encodedSolution);
+//   EncodedSolution bestSolution = encodedSolution; 
 
-  // Iterar entre todos los días para cada paciente
-  for (int i = 0; i <  encodedSolution.encoded_patients.size(); ++i) {
-    // Buscar al paciente en los datos del problema
-    auto patientIt = std::find_if(problem.patients.begin(), problem.patients.end(),
-                                  [&encodedSolution, i](const Patient &patient)
-                                  {
-                                    return patient.id == encodedSolution.encoded_patients[i].patient_id;
-                                  });
-    if (patientIt == problem.patients.end()) {
-      throw std::runtime_error("Paciente no encontrado en los datos del problema.");
-    }
-    const auto &patient = *patientIt;
+//   // Iterar entre todos los días para cada paciente
+//   for (int i = 0; i <  encodedSolution.encoded_patients.size(); ++i) {
+//     // Buscar al paciente en los datos del problema
+//     auto patientIt = std::find_if(problem.patients.begin(), problem.patients.end(),
+//                                   [&encodedSolution, i](const Patient &patient)
+//                                   {
+//                                     return patient.id == encodedSolution.encoded_patients[i].patient_id;
+//                                   });
+//     if (patientIt == problem.patients.end()) {
+//       throw std::runtime_error("Paciente no encontrado en los datos del problema.");
+//     }
+//     const auto &patient = *patientIt;
 
-    // Eliminar las habitaciones incompatibles para el paciente del vector total de habitaciones
-    std::vector<std::string> availableRooms;
-    for (const auto &room : problem.rooms) {
-      if (std::find(patient.incompatible_room_ids.begin(), patient.incompatible_room_ids.end(), room.id) == patient.incompatible_room_ids.end()) {
-        availableRooms.push_back(room.id);
-      }
-    }
-    // Si no hay habitaciones disponibles, continuar con el siguiente paciente
-    if (availableRooms.empty()) {
-      continue;
-    }
-    // Iterar sobre las habitaciones disponibles
-    for (const auto &room : availableRooms) {
-      // Iterar sobre los días, para cambiar el día de admisión de los pacientes en la codificación
-      EncodedSolution newEncodedSolution = bestSolution;
-      newEncodedSolution.encoded_patients[i].admission_day = patient.surgery_release_day;
-      newEncodedSolution.encoded_patients[i].room_id = room;
+//     // Eliminar las habitaciones incompatibles para el paciente del vector total de habitaciones
+//     std::vector<std::string> availableRooms;
+//     for (const auto &room : problem.rooms) {
+//       if (std::find(patient.incompatible_room_ids.begin(), patient.incompatible_room_ids.end(), room.id) == patient.incompatible_room_ids.end()) {
+//         availableRooms.push_back(room.id);
+//       }
+//     }
+//     // Si no hay habitaciones disponibles, continuar con el siguiente paciente
+//     if (availableRooms.empty()) {
+//       continue;
+//     }
+//     // Iterar sobre las habitaciones disponibles
+//     for (const auto &room : availableRooms) {
+//       // Iterar sobre los días, para cambiar el día de admisión de los pacientes en la codificación
+//       EncodedSolution newEncodedSolution = bestSolution;
+//       newEncodedSolution.encoded_patients[i].admission_day = patient.surgery_release_day;
+//       newEncodedSolution.encoded_patients[i].room_id = room;
 
-      // Evaluar la nueva solución
-      auto newFitness = solve(newEncodedSolution);
-      // Si la nueva solución es mejor, actualizar la mejor solución
-      if (isBetterFitness(newFitness, bestFitness)) {
-        bestFitness = newFitness;
-        bestSolution = newEncodedSolution;
-      }
-    }
-  }
+//       // Evaluar la nueva solución
+//       auto newFitness = solve(newEncodedSolution);
+//       // Si la nueva solución es mejor, actualizar la mejor solución
+//       if (isBetterFitness(newFitness, bestFitness)) {
+//         bestFitness = newFitness;
+//         bestSolution = newEncodedSolution;
+//       }
+//     }
+//   }
 
-  encodedSolution = bestSolution;
-  return bestFitness;
-}
+//   encodedSolution = bestSolution;
+//   return bestFitness;
+// }

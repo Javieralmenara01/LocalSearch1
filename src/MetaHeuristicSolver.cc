@@ -128,7 +128,6 @@ std::vector<EncodedSolution> MetaHeuristicSolver::generateInitialPopulation(int 
   return population;
 }
 
-
 /**
  * Algoritmo genético para resolver el problema de asignación hospitalaria.
  * 
@@ -139,7 +138,7 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
   // Parámetros del algoritmo
   const int tournamentSize = 3;                         // Tamaño del torneo para la selección
   const double crossoverRate = 0.3;                       // Parámetro de cruce
-  const auto maxDuration = std::chrono::minutes(60);      // Tiempo máximo de ejecución
+  const auto maxDuration = std::chrono::minutes(3);      // Tiempo máximo de ejecución
   const int eliteCount = 10;                              // Número de soluciones elite a retener
 
   // Tiempo de inicio
@@ -163,7 +162,7 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
     for (size_t j = i; j < end; ++j) {
       threads.emplace_back([&, j]() {
         Solver solver(problem);
-        auto [hardViolations, softPenalty] = solver.localSearch(population[j]);
+        auto [hardViolations, softPenalty] = solver.localSearchNurses(population[j]);
         fitnesses[j] = { hardViolations, softPenalty };
         // Actualizar la mejor solución global de forma segura
         std::lock_guard<std::mutex> lock(bestMutex);
@@ -247,7 +246,7 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
 
       // Aplicar mutación a cada parte
       mutatePatients(offspring.encoded_patients);
-      mutateNurses(offspring.encoded_nurses);
+      // mutateNurses(offspring.encoded_nurses);
 
       newPopulation.push_back(offspring);
     }
@@ -262,7 +261,7 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
       for (size_t j = i; j < end; ++j) {
         threads.emplace_back([&, j]() {
           Solver solver(problem);
-          auto [hardViolations, softPenalty] = solver.localSearch(population[j]);
+          auto [hardViolations, softPenalty] = solver.localSearchNurses(population[j]);
           fitnesses[j] = { hardViolations, softPenalty };
           // Actualizar la mejor solución global de forma segura
           std::lock_guard<std::mutex> lock(bestMutex);
@@ -571,49 +570,3 @@ void MetaHeuristicSolver::mutateNurses(std::vector<std::vector<std::string>>& nu
   // Realizar el intercambio
   std::swap(blockA[indexA], blockB[indexB]);
 }
-
-/**
- * Selecciona dos padres de la población mediante torneo.
- * 
- * @param population Población de soluciones.
- * @param fitnesses Fitness de cada solución.
- * @return Par de padres seleccionados.
- */
-// std::pair<std::vector<EncodedPatientSolution>, std::vector<EncodedPatientSolution>> MetaHeuristicSolver::selectParents(const std::vector<std::vector<EncodedPatientSolution>>& population, const std::vector<std::pair<int, int>>& fitnesses) {
-
-//   std::uniform_int_distribution<int> dist(0, population.size() - 1);
-
-//   auto tournamentSelect = [&]() -> int {
-//     const int tournamentSize = 3; // Tamaño del torneo (ajustable)
-//     int bestIndex = -1;
-//     std::pair<int, int> bestFitness = {std::numeric_limits<int>::max(), std::numeric_limits<int>::max()};
-
-//     for (int i = 0; i < tournamentSize; ++i) {
-//       int idx = dist(rng);
-
-//       // Verificar si el individuo actual es mejor que el mejor encontrado
-//       if (fitnesses[idx].first < bestFitness.first || 
-//          (fitnesses[idx].first == bestFitness.first && fitnesses[idx].second < bestFitness.second)) {
-//         bestFitness = fitnesses[idx];
-//         bestIndex = idx;
-//       }
-//     }
-
-//     return (bestIndex != -1) ? bestIndex : dist(rng);  // Si no encontró, elige al azar
-//   };
-
-//   int parent1 = tournamentSelect();
-//   int parent2;
-//   int attempts = 0;
-
-//   do {
-//     parent2 = tournamentSelect();
-//     attempts++;
-//     // Esto se podría comentar es complicado que de forma aleatoria se elija el mismo padre varias veces seguidas
-//     if (attempts > 100) { // Máximo intentos para evitar bucles infinitos
-//       break;
-//     }
-//   } while (parent2 == parent1);
-
-//   return {population[parent1], population[parent2]};
-// }

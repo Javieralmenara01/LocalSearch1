@@ -32,7 +32,7 @@ class Solver {
   std::pair<int, int> solve(EncodedSolution& encodedSolution);
   void exportSolution(const std::string& filename);
 
-  std::pair<int, int> localSearch(EncodedSolution& encodedSolution);
+  std::pair<int,int> localSearchNurses(EncodedSolution& enc);
   
  private:
   ProblemInstance problem;
@@ -42,6 +42,9 @@ class Solver {
 
   // Inicialización de los estados dinámicos
   void initializeDynamicStates();
+  void applyNurses(const EncodedSolution& enc);
+
+  std::pair<int,int> computeNurseOnlyCosts();
 
   // Funciones de verificación de disponibilidad
   bool checkSurgeonAvailability(const Patient &patient, int day);
@@ -52,6 +55,10 @@ class Solver {
   void assignSurgeon(const Patient &patient, int day);
   std::string assignOperatingTheater(const Patient &patient, int day);
   void assignRoom(const Patient &patient, int day, const std::string &room_id);
+
+  // Operadores de reparación
+  bool repairMandatoryPatient(const Patient &patient, EncodedPatientSolution &enc);
+  bool repairOptionalPatient(const Patient &patient, EncodedPatientSolution &enc);
 
   // Cálculo de restricciones blandas
   int calculateSoftConstraints(); // Cálculo de la función objetivo (suma de penalizaciones)
