@@ -2,3 +2,6 @@
 .DS_Store
 vcpkg
 build
+*.json
+validator/IHTP_Validator
+CMakeLists.txt
