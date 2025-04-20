@@ -138,7 +138,7 @@ std::tuple<std::vector<EncodedPatientSolution>, int> MetaHeuristicSolver::geneti
   // Parámetros del algoritmo
   const int tournamentSize = 3;                         // Tamaño del torneo para la selección
   const double crossoverRate = 0.3;                       // Parámetro de cruce
-  const auto maxDuration = std::chrono::minutes(3);      // Tiempo máximo de ejecución
+  const auto maxDuration = std::chrono::minutes(10);      // Tiempo máximo de ejecución
   const int eliteCount = 10;                              // Número de soluciones elite a retener
 
   // Tiempo de inicio

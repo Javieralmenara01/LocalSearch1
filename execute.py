@@ -21,7 +21,7 @@ def run_instance(instance_path, build_dir, validator_path, log_handle):
     redirigiendo su salida al handle proporcionado.
     """
     main_executable = os.path.join(build_dir, 'main')
-    best_solution = os.path.join(build_dir, 'bestSolution.json')
+    best_solution = 'bestSolution.json'
     
     # Ejecutar el algoritmo metaheurístico
     logging.info(f"Ejecutando: {main_executable} {instance_path}")
@@ -43,7 +43,7 @@ def run_instance(instance_path, build_dir, validator_path, log_handle):
 
 def main():
     build_dir = 'build'
-    validator_path = os.path.join('validador', 'IHTP_Validator')
+    validator_path = os.path.join('validator', 'IHTP_Validator')
     instances_dir = os.path.join('instances', 'ihtc2024_test_dataset')
     
     # Abrimos el fichero de log en modo escritura
@@ -55,7 +55,7 @@ def main():
             
             # Ejecutar 2 veces por instancia
             for run_number in range(1, 3):
-                logging.info(f"Instancia: {instance_file} (corrida {run_number}/2)")
+                logging.info(f"Instancia: {instance_file} (ejecución {run_number}/2)")
                 run_instance(instance_path, build_dir, validator_path, log_handle)
 
 if __name__ == '__main__':
